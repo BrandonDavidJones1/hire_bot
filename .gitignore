@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+env/
+.venv/
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Environment variables
+.env
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# ngrok (if you ever download it directly into the project - not typical)
+# ngrok
+# ngrok.exe
+
+# If you use pip-tools for requirements management
+# requirements.txt (if generated from requirements.in)
+# Or if you want to commit requirements.txt but not others:
+# requirements-dev.txt
+# requirements_dev.txt
