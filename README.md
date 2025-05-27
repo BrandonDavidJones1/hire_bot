@@ -63,5 +63,3 @@ This project is a Python-based SMS bot designed to walk new hires for "Let's Tak
 
 7.  **Test:**
     Send an SMS message to your Twilio phone number to begin the onboarding flow.
-
-## Project Structure
