@@ -1,5 +1,3 @@
-# --- START OF FILE bot.py ---
-
 import discord
 import os
 import asyncio
@@ -16,6 +14,7 @@ BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 ceo_id_str = os.getenv('CEO_USER_ID')
 CEO_USER_ID = int(ceo_id_str) if ceo_id_str and ceo_id_str.strip().isdigit() else None
 CEO_CONTACT_DISPLAY_NAME = "Corey LTS (CEO)"
+CEO_EMAIL_FOR_CONTRACTS = os.getenv('CEO_EMAIL_FOR_CONTRACTS', 'ceo@example.com') # For Adobe Sign CC
 
 # Developer (You) - Loaded but not used in user-facing onboarding flow anymore
 dev_id_str = os.getenv('DEV_USER_ID')
@@ -27,6 +26,8 @@ ACTUAL_DEV_CONTACT_NAME = os.getenv('DEV_CONTACT_NAME_ENV', 'the Developer')
 TRAINING_MANUAL_URL = os.getenv('TRAINING_MANUAL_URL', 'https://example.com/manual')
 TRAINING_VIDEO_URL = os.getenv('TRAINING_VIDEO_URL', 'https://example.com/video')
 TRAINING_RECORDINGS_URL = os.getenv('TRAINING_RECORDINGS_URL', 'https://example.com/recordings')
+# This is the new variable for the Adobe Sign widget URL
+ADOBE_SIGN_STATIC_CONTRACT_URL = os.getenv('ADOBE_SIGN_STATIC_CONTRACT_URL', 'https://yourcompany.na1.adobesign.com/public/esignWidget?wid=MISSING_WIDGET_ID_EXAMPLE') 
 
 # --- Bot Setup ---
 intents = discord.Intents.default()
@@ -45,7 +46,11 @@ ONBOARDING_STEPS = [
     'start', 'check_computer_response', 'ask_bilingual', 'check_bilingual_response',
     'ask_languages', 'ask_state', 'ask_email', 'instruct_add_friends',
     'check_add_friends_response', 'provide_training_materials',
-    'confirm_training_completion', 'notify_ceo_and_wait', 'final_instructions'
+    'confirm_training_completion', 'notify_ceo_and_wait',
+    'final_instructions_pre_contract',
+    'awaiting_sign_contract_command',
+    'awaiting_contract_confirmation',
+    'completed'
 ]
 
 async def send_onboarding_message(user_id, step_name_override=None):
@@ -86,7 +91,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
         message_content = "2. Are you bilingual? (Y/N)"
         next_step_in_flow = 'check_bilingual_response'
 
-    elif current_step_name == 'check_bilingual_response': # This step primarily routes based on collected data
+    elif current_step_name == 'check_bilingual_response':
         is_bilingual = state['data'].get('bilingual', False)
         if is_bilingual:
             message_content = "Great! What languages do you speak fluently (besides English, if applicable)?"
@@ -95,15 +100,15 @@ async def send_onboarding_message(user_id, step_name_override=None):
             message_content = "3. In which state are you located?"
             next_step_in_flow = 'ask_state'
 
-    elif current_step_name == 'ask_languages': # After asking for languages
+    elif current_step_name == 'ask_languages':
         message_content = "3. In which state are you located?"
         next_step_in_flow = 'ask_state'
 
-    elif current_step_name == 'ask_state': # After asking for state
+    elif current_step_name == 'ask_state':
         message_content = "4. What is your primary email address?"
         next_step_in_flow = 'ask_email'
 
-    elif current_step_name == 'ask_email' or current_step_name == 'instruct_add_friends': # After asking for email, or if explicitly called
+    elif current_step_name == 'ask_email' or current_step_name == 'instruct_add_friends':
         friends_to_add_list = ["- Adam Black (Support)"]
         if CEO_USER_ID:
             friends_to_add_list.append(f"- {CEO_CONTACT_DISPLAY_NAME}")
@@ -121,8 +126,6 @@ async def send_onboarding_message(user_id, step_name_override=None):
 
 
     elif current_step_name == 'check_add_friends_response': 
-        # This step is handled in on_message. If called directly here, it means we want to proceed.
-        # on_message will override to provide_training_materials
         pass 
 
     elif current_step_name == 'provide_training_materials':
@@ -135,7 +138,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
         )
         next_step_in_flow = 'confirm_training_completion'
 
-    elif current_step_name == 'confirm_training_completion': # After user says DONE
+    elif current_step_name == 'confirm_training_completion':
         summary = (
             f"New Hire Onboarding Information for: {user.name} ({user.id})\n"
             f"--------------------------------------------------\n"
@@ -199,7 +202,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
             failed_str = ", ".join(failed_to_notify_descriptors)
             message_content = (
                 f"Thank you for completing the training. I attempted to notify {CEO_CONTACT_DISPLAY_NAME if CEO_USER_ID else 'the designated contact'} but encountered issues: {failed_str}.\n"
-                f"Please inform them manually that you'vecompleted this stage. Then type `complete` here once you have confirmation and access."
+                f"Please type `complete` to move on to the next step"
             )
         else: # No CEO_USER_ID configured
             message_content = (
@@ -208,33 +211,29 @@ async def send_onboarding_message(user_id, step_name_override=None):
                 "Once they confirm and you have access, type `complete` to proceed to final steps."
             )
 
-    elif current_step_name == 'notify_ceo_and_wait': # User is waiting, no message sent by bot unless prompted by user typing something
+    elif current_step_name == 'notify_ceo_and_wait':
         return 
 
-    elif current_step_name == 'final_instructions':
+    elif current_step_name == 'final_instructions_pre_contract':
         message_content = (
             "Welcome aboard officially!\n\n"
             "Your final steps are:\n"
             f"1. Please contact {CEO_CONTACT_DISPLAY_NAME} for your next assignments and to get fully integrated.\n"
             "2. Adam Black is your human contact for project specific questions and quality control.\n"
-            "3. Samantha is your Discord training and agent support bot on the main server. You can start by telling Samantha that you've finished your onboarding training.\n\n"
-            "This concludes your automated onboarding. Good luck!"
+            "3. Samantha is your Discord training and agent support bot on the main server. You can start by telling Samantha that you've finished your onboarding training.\n"
+            "4. To proceed with your Independent Contractor Agreement via Adobe Sign, please type `sign contract` back to me.\n\n"
+            "Good luck!"
         )
-        next_step_in_flow = 'completed'
+        next_step_in_flow = 'awaiting_sign_contract_command'
 
     if message_content:
         try:
             await user.send(message_content)
-            if next_step_in_flow: # Only update step if a next step is defined for the message sent
+            if next_step_in_flow:
                  user_onboarding_states[user_id]['step'] = next_step_in_flow
                  print(f"User {user.name} advanced to step: {next_step_in_flow}")
-            if next_step_in_flow == 'completed':
-                print(f"Onboarding completed for user {user.name}. Removing from active states.")
-                if user_id in user_onboarding_states:
-                    del user_onboarding_states[user_id]
         except discord.Forbidden:
             print(f"Could not send DM to {user.name} ({user_id}). DMs disabled or bot blocked.")
-            # Consider removing user from onboarding if DMs are blocked, or have a retry mechanism
         except Exception as e:
             print(f"Error sending DM to {user.name}: {e}")
 
@@ -257,6 +256,18 @@ async def on_ready():
         print(f"INFO: DEV_USER_ID is set to {DEV_USER_ID} ({ACTUAL_DEV_CONTACT_NAME}). This ID is not currently used for user-facing onboarding notifications.")
     else:
         print("INFO: DEV_USER_ID is not set. (This ID is not currently used for user-facing onboarding notifications).")
+    
+    # Check for the new Adobe Sign URL
+    if not ADOBE_SIGN_STATIC_CONTRACT_URL or ADOBE_SIGN_STATIC_CONTRACT_URL == 'https://yourcompany.na1.adobesign.com/public/esignWidget?wid=MISSING_WIDGET_ID_EXAMPLE':
+        print("WARNING: ADOBE_SIGN_STATIC_CONTRACT_URL is not set or is using the default placeholder. "
+              "This URL is intended for the Adobe Sign widget. Please set it in your .env file for the contract signing step.")
+    else:
+        print(f"INFO: ADOBE_SIGN_STATIC_CONTRACT_URL (Adobe Sign Widget) is set to: {ADOBE_SIGN_STATIC_CONTRACT_URL}")
+    
+    if not CEO_EMAIL_FOR_CONTRACTS or CEO_EMAIL_FOR_CONTRACTS == 'ceo@example.com':
+        print(f"WARNING: CEO_EMAIL_FOR_CONTRACTS is not set or is using the default 'ceo@example.com'. This email is used in messages describing the Adobe Sign process. Please set it in your .env file.")
+    else:
+        print(f"INFO: CEO_EMAIL_FOR_CONTRACTS (for Adobe Sign CC description) is set to: {CEO_EMAIL_FOR_CONTRACTS}")
     print('------')
 
 @client.event
@@ -268,21 +279,28 @@ async def on_message(message):
         user_id = message.author.id
         processed_message_content = message.content.lower().strip()
 
-        # Handle 'start' command
         if processed_message_content == 'start':
-            if user_id not in user_onboarding_states or user_onboarding_states.get(user_id, {}).get('step') == 'completed':
+            is_fully_completed = False
+            if user_id in user_onboarding_states:
+                 if user_onboarding_states[user_id]['data'].get('contract_process_completed') or \
+                    user_onboarding_states[user_id].get('step') == 'completed':
+                    is_fully_completed = True
+            
+            if user_id not in user_onboarding_states or is_fully_completed:
+                if is_fully_completed and user_id in user_onboarding_states :
+                    del user_onboarding_states[user_id]
+
                 print(f"Starting onboarding for user {message.author.name} ({user_id}) via 'start' command")
                 user_onboarding_states[user_id] = {
                     'step': 'start',
                     'data': {},
                     'dm_channel_id': message.channel.id
                 }
-                await send_onboarding_message(user_id) # 'start' step will send the first question
+                await send_onboarding_message(user_id)
             else:
                 await message.channel.send("You are already in the onboarding process. Please reply to my last question or type `reset` if you wish to start over.")
             return
 
-        # Handle 'reset' command
         if processed_message_content == 'reset':
             if user_id in user_onboarding_states:
                 del user_onboarding_states[user_id]
@@ -291,11 +309,10 @@ async def on_message(message):
                 await message.channel.send("You are not currently in an onboarding process to reset.")
             return
 
-        # Handle 'complete' command
         if processed_message_content == 'complete':
             if user_id in user_onboarding_states and user_onboarding_states[user_id]['step'] == 'notify_ceo_and_wait':
-                print(f"User {message.author.name} confirmed verification with 'complete'. Proceeding to final instructions.")
-                await send_onboarding_message(user_id, step_name_override='final_instructions')
+                print(f"User {message.author.name} confirmed verification with 'complete'. Proceeding to final instructions (pre-contract).")
+                await send_onboarding_message(user_id, step_name_override='final_instructions_pre_contract')
             elif user_id in user_onboarding_states:
                 current_user_step = user_onboarding_states[user_id]['step']
                 contacts_to_wait_for = []
@@ -309,138 +326,229 @@ async def on_message(message):
                     notified_person_descriptor = " and ".join(contacts_to_wait_for)
                     await message.channel.send(f"You can use the `complete` command after {notified_person_descriptor} has confirmed with you and granted access. Please wait for their confirmation.")
                 elif not CEO_USER_ID and current_user_step == 'notify_ceo_and_wait':
-                    await message.channel.send("You can use `complete` now as no CEO was configured for notification.")
+                    print(f"User {message.author.name} typed 'complete' (no CEO configured). Proceeding to final instructions (pre-contract).")
+                    await send_onboarding_message(user_id, step_name_override='final_instructions_pre_contract')
                 else: 
                      await message.channel.send(f"You cannot use `complete` at this stage ('{current_user_step}'). Please continue with the current step or wait if you're at the notification stage.")
             else:
                 await message.channel.send("You are not currently in an onboarding stage where the `complete` command is applicable.")
             return
 
-        # If user is NOT in onboarding process and didn't type a known command:
+        if processed_message_content == 'sign contract':
+            if user_id in user_onboarding_states and user_onboarding_states[user_id]['step'] == 'awaiting_sign_contract_command':
+                user_email = user_onboarding_states[user_id]['data'].get('email', 'your registered email address')
+                
+                adobe_sign_url_to_use = ADOBE_SIGN_STATIC_CONTRACT_URL
+                is_placeholder_url = (
+                    not adobe_sign_url_to_use or
+                    adobe_sign_url_to_use == 'https://yourcompany.na1.adobesign.com/public/esignWidget?wid=MISSING_WIDGET_ID_EXAMPLE'
+                )
+
+                if is_placeholder_url:
+                    await message.channel.send(
+                        "Great! We will now proceed with your Independent Contractor Agreement using Adobe Sign.\n\n"
+                        "**IMPORTANT NOTE:** The Adobe Sign contract URL is not properly configured in the bot. "
+                        "Normally, you would be directed to a live signing page.\n"
+                        f"The system expects a URL like: `https://<your-adobe-sign-domain>/public/esignWidget?wid=<YOUR_WIDGET_ID>` but found `{adobe_sign_url_to_use}` (which is a placeholder).\n\n"
+                        "For this simulation, please imagine you have found and signed the contract via an Adobe Sign link.\n"
+                        f"Your email (`{user_email}`) and {CEO_CONTACT_DISPLAY_NAME}'s email (`{CEO_EMAIL_FOR_CONTRACTS}`) would be involved in the Adobe Sign workflow.\n\n"
+                        "Once you have (conceptually) signed it, please reply with `contract done`."
+                    )
+                    print(f"WARNING: ADOBE_SIGN_STATIC_CONTRACT_URL is not configured or is placeholder. User {message.author.name} proceeding with simulated contract signing step.")
+                else:
+                    await message.channel.send(
+                        "Great! We will now proceed with your Independent Contractor Agreement using Adobe Sign.\n\n"
+                        "Please use the following link to access and sign the 'LTS CA (2025)' document via Adobe Sign:\n"
+                        f"{adobe_sign_url_to_use}\n\n"
+                        f"**Instructions for Adobe Sign:**\n"
+                        f"1. Click the link above. You may need to enter your email address (`{user_email}`) to initiate the signing process if prompted by the widget.\n"
+                        f"2. Follow the on-screen instructions in Adobe Sign to review and sign the document.\n"
+                        f"3. {CEO_CONTACT_DISPLAY_NAME} (at `{CEO_EMAIL_FOR_CONTRACTS}`) should also receive a copy of the signed agreement from Adobe Sign once all parties have signed (depending on the widget's configuration).\n\n"
+                        "This link uses an Adobe Sign Widget, which is a publicly accessible URL for document signing.\n\n"
+                        "Once you have completed the signing process through that link, please reply with `contract done`."
+                    )
+                
+                user_onboarding_states[user_id]['step'] = 'awaiting_contract_confirmation'
+                print(f"User {message.author.name} is now at 'awaiting_contract_confirmation' (Adobe Sign) using URL: {adobe_sign_url_to_use}.")
+
+            elif user_id in user_onboarding_states and user_onboarding_states[user_id]['step'] == 'awaiting_contract_confirmation':
+                await message.channel.send("I'm still waiting for you to confirm completion of the contract signing process using the Adobe Sign link. Please reply with `contract done` once ready.")
+            else:
+                await message.channel.send("You can use the `sign contract` command after you've received the final instructions that mention it.")
+            return
+
+        if processed_message_content == 'contract done':
+            if user_id in user_onboarding_states and user_onboarding_states[user_id]['step'] == 'awaiting_contract_confirmation':
+                user_onboarding_states[user_id]['data']['contract_process_completed'] = True
+                user_email = user_onboarding_states[user_id]['data'].get('email', 'N/A')
+                
+                await message.channel.send(
+                    "Thank you for confirming! Your Independent Contractor Agreement process (via Adobe Sign) is now marked as complete on my end."
+                )
+                print(f"User {message.author.name} confirmed 'contract done' (Adobe Sign).")
+
+                if CEO_USER_ID:
+                    ceo_user = None
+                    try:
+                        ceo_user = await client.fetch_user(CEO_USER_ID)
+                    except discord.NotFound:
+                         print(f"Could not fetch CEO user {CEO_USER_ID} to notify about contract completion for {message.author.name}.")
+                    
+                    if ceo_user:
+                        ceo_notification_message = (
+                            f"ALERT: User {message.author.name} (ID: {message.author.id}, Email: {user_email}) has confirmed completion "
+                            f"of the Independent Contractor Agreement process using the Adobe Sign widget link.\n"
+                            f"Adobe Sign should have sent a copy of the signed document to your email: `{CEO_EMAIL_FOR_CONTRACTS}` (if the widget and signing process were completed correctly). Please verify."
+                        )
+                        try:
+                            await ceo_user.send(ceo_notification_message)
+                            await message.channel.send(f"I've also notified {CEO_CONTACT_DISPLAY_NAME} that you've completed this step and they should check their email for the signed document from Adobe Sign.")
+                            print(f"Notified {CEO_CONTACT_DISPLAY_NAME} about contract completion for {message.author.name} (Adobe Sign).")
+                        except discord.Forbidden:
+                            await message.channel.send(f"I attempted to notify {CEO_CONTACT_DISPLAY_NAME}, but their DMs are closed or I'm blocked. Please ensure they check their email (`{CEO_EMAIL_FOR_CONTRACTS}`) for the signed document from Adobe Sign.")
+                            print(f"Failed to notify {CEO_CONTACT_DISPLAY_NAME} (DMs disabled/blocked) for {message.author.name}'s contract completion (Adobe Sign).")
+                        except Exception as e:
+                            await message.channel.send(f"I encountered an error trying to notify {CEO_CONTACT_DISPLAY_NAME}: {e}. Please ensure they check their email (`{CEO_EMAIL_FOR_CONTRACTS}`) for the signed document from Adobe Sign.")
+                            print(f"Error notifying {CEO_CONTACT_DISPLAY_NAME} for {message.author.name}'s contract completion (Adobe Sign): {e}")
+                    elif CEO_USER_ID:
+                         await message.channel.send(f"I was configured to notify {CEO_CONTACT_DISPLAY_NAME} but could not find their user profile. Please ensure they check their email (`{CEO_EMAIL_FOR_CONTRACTS}`) for the signed document from Adobe Sign.")
+                else:
+                    await message.channel.send(f"Contract completion noted. (CEO not configured for bot notification, but in a real setup, Adobe Sign would typically send the signed document to `{CEO_EMAIL_FOR_CONTRACTS}`).")
+
+                await message.channel.send(
+                    "This fully concludes your automated onboarding with me. Welcome officially to the team! "
+                    "You can refer back to the previous instructions for your next human contacts."
+                )
+                
+                user_onboarding_states[user_id]['step'] = 'completed'
+                print(f"Onboarding fully completed (including contract - Adobe Sign) for user {message.author.name}. Removing from active states.")
+                # Clear state after full completion
+                if user_id in user_onboarding_states:
+                    del user_onboarding_states[user_id] 
+            else:
+                await message.channel.send("You can use `contract done` after I've asked you to complete the signing process and you've typed `sign contract`.")
+            return
+
         if user_id not in user_onboarding_states:
             await message.channel.send("Hello! To begin the onboarding process, please type `start`.")
             return
 
-        # If user IS in onboarding process, handle their response based on current step:
-        if user_id in user_onboarding_states: # Redundant if above check returns, but good for explicit state check
-            state = user_onboarding_states[user_id]
-            current_step = state['step']
-            response = message.content.strip() # Use raw response for data that needs casing/full text
+        state = user_onboarding_states[user_id]
+        current_step = state['step']
+        response = message.content.strip()
 
-            if current_step == 'check_computer_response':
-                if processed_message_content.upper() == 'Y':
-                    state['data']['has_computer'] = True
-                elif processed_message_content.upper() == 'N':
-                    state['data']['has_computer'] = False
-                    await message.channel.send(
-                        "A computer or laptop (not an iPad or tablet) is required for this role. "
-                        "Unfortunately, we cannot proceed with your onboarding at this time without the necessary equipment. "
-                        "Please contact your hiring manager if you have any questions or to discuss your situation."
-                    )
-                    if user_id in user_onboarding_states:
-                        del user_onboarding_states[user_id]
-                    print(f"Onboarding terminated for user {message.author.name} ({user_id}) due to lack of required equipment.")
-                    return 
-                else:
-                    await message.channel.send("Invalid input. Please answer Y or N.")
-                    return
-                await send_onboarding_message(user_id, step_name_override='ask_bilingual')
-
-            elif current_step == 'check_bilingual_response':
-                if processed_message_content.upper() == 'Y':
-                    state['data']['bilingual'] = True
-                elif processed_message_content.upper() == 'N':
-                    state['data']['bilingual'] = False
-                else:
-                    await message.channel.send("Invalid input. Please answer Y or N.")
-                    return
-                # send_onboarding_message will decide next question based on 'bilingual' data
-                await send_onboarding_message(user_id, step_name_override='check_bilingual_response') 
-
-            elif current_step == 'ask_languages':
-                state['data']['languages'] = response
-                # send_onboarding_message for 'ask_languages' will send the 'ask_state' question
-                await send_onboarding_message(user_id, step_name_override='ask_languages')
-
-            elif current_step == 'ask_state':
-                state['data']['state'] = response 
-                normalized_state_input = response.strip().lower()
-                if normalized_state_input == 'florida' or normalized_state_input == 'fl':
-                    await message.channel.send(
-                        "Thank you for your interest. Unfortunately, at this time, we are unable to proceed with your application "
-                        "as we do not currently meet the minimum requirements to operate in Florida. We appreciate your understanding."
-                    )
-                    if user_id in user_onboarding_states: del user_onboarding_states[user_id]
-                    print(f"Onboarding process terminated for user {message.author.name} ({user_id}) due to Florida residency.")
-                    return
-                else:
-                    # send_onboarding_message for 'ask_state' will send the 'ask_email' question
-                    await send_onboarding_message(user_id, step_name_override='ask_state')
-
-            elif current_step == 'ask_email':
-                if re.match(r"[^@]+@[^@]+\.[^@]+", response):
-                    state['data']['email'] = response
-                    # send_onboarding_message for 'ask_email' will send the 'instruct_add_friends' message
-                    await send_onboarding_message(user_id, step_name_override='ask_email') 
-                else:
-                    await message.channel.send("That doesn't look like a valid email address. Please try again.")
-                    return
-
-            elif current_step == 'check_add_friends_response':
-                if processed_message_content.upper() == 'Y':
-                    state['data']['added_friends'] = True
-                elif processed_message_content.upper() == 'N':
-                    state['data']['added_friends'] = False
-                    friends_to_remind_list = ["Adam Black (Support)"]
-                    if CEO_USER_ID:
-                        friends_to_remind_list.append(CEO_CONTACT_DISPLAY_NAME)
-                    friends_to_remind_str = " and ".join(friends_to_remind_list)
-                    if not friends_to_remind_list or (len(friends_to_remind_list)==1 and "Adam Black" in friends_to_remind_list[0] and not CEO_USER_ID):
-                        friends_to_remind_str = "Adam Black (Support)"
-                    await message.channel.send(f"Please ensure you add {friends_to_remind_str} as friends. This is important for team communication.")
-                else:
-                    await message.channel.send("Invalid input. Please answer Y or N.")
-                    return
-                # The 'check_add_friends_response' step in send_onboarding_message has 'pass',
-                # so we explicitly move to the next logical step message.
-                await send_onboarding_message(user_id, step_name_override='provide_training_materials')
-
-            elif current_step == 'confirm_training_completion':
-                if processed_message_content.upper() == 'DONE':
-                    state['data']['training_completed'] = True
-                    # send_onboarding_message for 'confirm_training_completion' will send summary & notify CEO
-                    await send_onboarding_message(user_id, step_name_override='confirm_training_completion') 
-                else:
-                    await message.channel.send("Please type 'DONE' once you have completed all training materials.")
-                    return
-
-            elif current_step == 'notify_ceo_and_wait':
-                # User typed something other than 'complete' while in the waiting state
-                wait_message = "I've already processed your training completion. "
-                contacts_to_wait_for = []
-                
-                if state['data'].get('_successfully_notified_ceo'):
-                    contacts_to_wait_for.append(CEO_CONTACT_DISPLAY_NAME)
-
-                if contacts_to_wait_for:
-                    notified_person_descriptor = " and ".join(contacts_to_wait_for)
-                    wait_message += (
-                        f"Please wait for {notified_person_descriptor} to contact you or grant you access. "
-                        "Once they have confirmed and you have access, please type `complete` back here."
-                    )
-                elif state['data'].get('_notification_attempted'): 
-                    wait_message += (
-                        f"I attempted to notify {CEO_CONTACT_DISPLAY_NAME if CEO_USER_ID else 'the designated contact'} but encountered issues. "
-                        "Please inform them manually that you've completed this stage. "
-                        "Then type `complete` here once you have confirmation and access."
-                    )
-                else: # No CEO configured
-                     wait_message += (
-                        "Your training completion is noted. As no CEO was configured for notification, "
-                        "type `complete` to proceed (this simulates approval)."
-                     )
-                await message.channel.send(wait_message)
+        if current_step == 'check_computer_response':
+            if processed_message_content.upper() == 'Y':
+                state['data']['has_computer'] = True
+            elif processed_message_content.upper() == 'N':
+                state['data']['has_computer'] = False
+                await message.channel.send(
+                    "A computer or laptop (not an iPad or tablet) is required for this role. "
+                    "Unfortunately, we cannot proceed with your onboarding at this time without the necessary equipment. "
+                    "Please contact your hiring manager if you have any questions or to discuss your situation."
+                )
+                if user_id in user_onboarding_states:
+                    del user_onboarding_states[user_id]
+                print(f"Onboarding terminated for user {message.author.name} ({user_id}) due to lack of required equipment.")
+                return 
+            else:
+                await message.channel.send("Invalid input. Please answer Y or N.")
                 return
+            await send_onboarding_message(user_id, step_name_override='ask_bilingual')
+
+        elif current_step == 'check_bilingual_response':
+            if processed_message_content.upper() == 'Y':
+                state['data']['bilingual'] = True
+            elif processed_message_content.upper() == 'N':
+                state['data']['bilingual'] = False
+            else:
+                await message.channel.send("Invalid input. Please answer Y or N.")
+                return
+            await send_onboarding_message(user_id, step_name_override='check_bilingual_response') 
+
+        elif current_step == 'ask_languages':
+            state['data']['languages'] = response
+            await send_onboarding_message(user_id, step_name_override='ask_languages')
+
+        elif current_step == 'ask_state':
+            state['data']['state'] = response 
+            normalized_state_input = response.strip().lower()
+            if normalized_state_input == 'florida' or normalized_state_input == 'fl':
+                await message.channel.send(
+                    "Thank you for your interest. Unfortunately, at this time, we are unable to proceed with your application "
+                    "as we do not currently meet the minimum requirements to operate in Florida. We appreciate your understanding."
+                )
+                if user_id in user_onboarding_states: del user_onboarding_states[user_id]
+                print(f"Onboarding process terminated for user {message.author.name} ({user_id}) due to Florida residency.")
+                return
+            else:
+                await send_onboarding_message(user_id, step_name_override='ask_state')
+
+        elif current_step == 'ask_email':
+            if re.match(r"[^@]+@[^@]+\.[^@]+", response):
+                state['data']['email'] = response
+                await send_onboarding_message(user_id, step_name_override='ask_email') 
+            else:
+                await message.channel.send("That doesn't look like a valid email address. Please try again.")
+                return
+
+        elif current_step == 'check_add_friends_response':
+            if processed_message_content.upper() == 'Y':
+                state['data']['added_friends'] = True
+            elif processed_message_content.upper() == 'N':
+                state['data']['added_friends'] = False
+                friends_to_remind_list = ["Adam Black (Support)"]
+                if CEO_USER_ID:
+                    friends_to_remind_list.append(CEO_CONTACT_DISPLAY_NAME)
+                friends_to_remind_str = " and ".join(friends_to_remind_list)
+                if not friends_to_remind_list or (len(friends_to_remind_list)==1 and "Adam Black" in friends_to_remind_list[0] and not CEO_USER_ID):
+                    friends_to_remind_str = "Adam Black (Support)"
+                await message.channel.send(f"Please ensure you add {friends_to_remind_str} as friends. This is important for team communication.")
+            else:
+                await message.channel.send("Invalid input. Please answer Y or N.")
+                return
+            await send_onboarding_message(user_id, step_name_override='provide_training_materials')
+
+        elif current_step == 'confirm_training_completion':
+            if processed_message_content.upper() == 'DONE':
+                state['data']['training_completed'] = True
+                await send_onboarding_message(user_id, step_name_override='confirm_training_completion') 
+            else:
+                await message.channel.send("Please type 'DONE' once you have completed all training materials.")
+                return
+
+        elif current_step == 'notify_ceo_and_wait':
+            wait_message = "I've already processed your training completion. "
+            contacts_to_wait_for = []
+            
+            if state['data'].get('_successfully_notified_ceo'):
+                contacts_to_wait_for.append(CEO_CONTACT_DISPLAY_NAME)
+
+            if contacts_to_wait_for:
+                notified_person_descriptor = " and ".join(contacts_to_wait_for)
+                wait_message += (
+                    f"Please type `complete` to move on to the next stage" # Corrected from a previous version that had them wait
+                )
+            elif state['data'].get('_notification_attempted'): 
+                wait_message += (
+                    f"type `complete` to move to the next step."
+                )
+            else: # No CEO configured
+                 wait_message += (
+                    "Your training completion is noted. As no CEO was configured for notification, "
+                    "type `complete` to proceed (this simulates approval)."
+                 )
+            await message.channel.send(wait_message)
+            return
+        
+        elif current_step == 'awaiting_sign_contract_command':
+            await message.channel.send(f"Please type `sign contract` to proceed with the agreement, or `reset` to start over the whole onboarding.")
+            return
+        
+        elif current_step == 'awaiting_contract_confirmation':
+            await message.channel.send(f"I'm waiting for you to confirm completion of the contract signing process. Please reply with `contract done` once ready, or `reset` to start over.")
+            return
+
 
 # --- Main Execution ---
 if __name__ == "__main__":
