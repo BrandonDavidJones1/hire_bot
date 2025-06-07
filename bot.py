@@ -1,3 +1,5 @@
+# --- START OF FILE bot.py ---
+
 import discord
 import os
 import asyncio
@@ -84,7 +86,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
         message_content = "2. Are you bilingual? (Y/N)"
         next_step_in_flow = 'check_bilingual_response'
 
-    elif current_step_name == 'check_bilingual_response':
+    elif current_step_name == 'check_bilingual_response': # This step primarily routes based on collected data
         is_bilingual = state['data'].get('bilingual', False)
         if is_bilingual:
             message_content = "Great! What languages do you speak fluently (besides English, if applicable)?"
@@ -93,22 +95,22 @@ async def send_onboarding_message(user_id, step_name_override=None):
             message_content = "3. In which state are you located?"
             next_step_in_flow = 'ask_state'
 
-    elif current_step_name == 'ask_languages':
+    elif current_step_name == 'ask_languages': # After asking for languages
         message_content = "3. In which state are you located?"
         next_step_in_flow = 'ask_state'
 
-    elif current_step_name == 'ask_state':
+    elif current_step_name == 'ask_state': # After asking for state
         message_content = "4. What is your primary email address?"
         next_step_in_flow = 'ask_email'
 
-    elif current_step_name == 'ask_email' or current_step_name == 'instruct_add_friends':
+    elif current_step_name == 'ask_email' or current_step_name == 'instruct_add_friends': # After asking for email, or if explicitly called
         friends_to_add_list = ["- Adam Black (Support)"]
         if CEO_USER_ID:
             friends_to_add_list.append(f"- {CEO_CONTACT_DISPLAY_NAME}")
         
         friends_to_add_str = "\n".join(friends_to_add_list)
-        if not friends_to_add_list: # Should not happen if Adam is always there
-             friends_to_add_str = "- Adam Black (Support)" # Fallback
+        if not friends_to_add_list:
+             friends_to_add_str = "- Adam Black (Support)"
 
         message_content = (
             "5. Please go into the MAIN CHAT of our Discord server and add the following users as friends:\n"
@@ -119,6 +121,8 @@ async def send_onboarding_message(user_id, step_name_override=None):
 
 
     elif current_step_name == 'check_add_friends_response': 
+        # This step is handled in on_message. If called directly here, it means we want to proceed.
+        # on_message will override to provide_training_materials
         pass 
 
     elif current_step_name == 'provide_training_materials':
@@ -131,7 +135,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
         )
         next_step_in_flow = 'confirm_training_completion'
 
-    elif current_step_name == 'confirm_training_completion':
+    elif current_step_name == 'confirm_training_completion': # After user says DONE
         summary = (
             f"New Hire Onboarding Information for: {user.name} ({user.id})\n"
             f"--------------------------------------------------\n"
@@ -154,13 +158,11 @@ async def send_onboarding_message(user_id, step_name_override=None):
         successfully_notified_user_facing_names = []
         failed_to_notify_descriptors = []
         state['data']['_notification_attempted'] = False
-        # state['data']['_successfully_notified_dev'] = False # Dev no longer notified
         state['data']['_successfully_notified_ceo'] = False
 
-        if CEO_USER_ID: # Only CEO notification is relevant now for this flag
+        if CEO_USER_ID:
             state['data']['_notification_attempted'] = True
 
-        # Notify CEO (Corey LTS)
         if CEO_USER_ID:
             ceo_user_to_notify = None
             try:
@@ -184,7 +186,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
         next_step_in_flow = 'notify_ceo_and_wait' 
 
         if successfully_notified_user_facing_names:
-            notified_str = " and ".join(successfully_notified_user_facing_names) # Should just be CEO now
+            notified_str = " and ".join(successfully_notified_user_facing_names)
             message_content = (
                 f"Thank you! I've forwarded your information to {notified_str} for verification.\n"
                 f"Please wait for them to contact you or grant you access to the main server channels.\n\n"
@@ -197,7 +199,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
             failed_str = ", ".join(failed_to_notify_descriptors)
             message_content = (
                 f"Thank you for completing the training. I attempted to notify {CEO_CONTACT_DISPLAY_NAME if CEO_USER_ID else 'the designated contact'} but encountered issues: {failed_str}.\n"
-                f"Please inform them manually that you've completed this stage. Then type `complete` here once you have confirmation and access."
+                f"Please inform them manually that you'vecompleted this stage. Then type `complete` here once you have confirmation and access."
             )
         else: # No CEO_USER_ID configured
             message_content = (
@@ -206,7 +208,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
                 "Once they confirm and you have access, type `complete` to proceed to final steps."
             )
 
-    elif current_step_name == 'notify_ceo_and_wait':
+    elif current_step_name == 'notify_ceo_and_wait': # User is waiting, no message sent by bot unless prompted by user typing something
         return 
 
     elif current_step_name == 'final_instructions':
@@ -223,7 +225,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
     if message_content:
         try:
             await user.send(message_content)
-            if next_step_in_flow:
+            if next_step_in_flow: # Only update step if a next step is defined for the message sent
                  user_onboarding_states[user_id]['step'] = next_step_in_flow
                  print(f"User {user.name} advanced to step: {next_step_in_flow}")
             if next_step_in_flow == 'completed':
@@ -232,6 +234,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
                     del user_onboarding_states[user_id]
         except discord.Forbidden:
             print(f"Could not send DM to {user.name} ({user_id}). DMs disabled or bot blocked.")
+            # Consider removing user from onboarding if DMs are blocked, or have a retry mechanism
         except Exception as e:
             print(f"Error sending DM to {user.name}: {e}")
 
@@ -265,19 +268,21 @@ async def on_message(message):
         user_id = message.author.id
         processed_message_content = message.content.lower().strip()
 
+        # Handle 'start' command
         if processed_message_content == 'start':
             if user_id not in user_onboarding_states or user_onboarding_states.get(user_id, {}).get('step') == 'completed':
                 print(f"Starting onboarding for user {message.author.name} ({user_id}) via 'start' command")
                 user_onboarding_states[user_id] = {
-                    'step': 'start', 
+                    'step': 'start',
                     'data': {},
                     'dm_channel_id': message.channel.id
                 }
-                await send_onboarding_message(user_id)
+                await send_onboarding_message(user_id) # 'start' step will send the first question
             else:
                 await message.channel.send("You are already in the onboarding process. Please reply to my last question or type `reset` if you wish to start over.")
             return
 
+        # Handle 'reset' command
         if processed_message_content == 'reset':
             if user_id in user_onboarding_states:
                 del user_onboarding_states[user_id]
@@ -286,7 +291,8 @@ async def on_message(message):
                 await message.channel.send("You are not currently in an onboarding process to reset.")
             return
 
-        if processed_message_content == 'complete': 
+        # Handle 'complete' command
+        if processed_message_content == 'complete':
             if user_id in user_onboarding_states and user_onboarding_states[user_id]['step'] == 'notify_ceo_and_wait':
                 print(f"User {message.author.name} confirmed verification with 'complete'. Proceeding to final instructions.")
                 await send_onboarding_message(user_id, step_name_override='final_instructions')
@@ -300,9 +306,9 @@ async def on_message(message):
                 if not contacts_to_wait_for and user_onboarding_states[user_id]['data'].get('_notification_attempted', False) and current_user_step == 'notify_ceo_and_wait':
                      await message.channel.send(f"I attempted to notify {CEO_CONTACT_DISPLAY_NAME if CEO_USER_ID else 'the designated contact'} but couldn't. Please inform them manually, then you can use `complete`.")
                 elif contacts_to_wait_for and current_user_step == 'notify_ceo_and_wait':
-                    notified_person_descriptor = " and ".join(contacts_to_wait_for) # Should be just CEO
+                    notified_person_descriptor = " and ".join(contacts_to_wait_for)
                     await message.channel.send(f"You can use the `complete` command after {notified_person_descriptor} has confirmed with you and granted access. Please wait for their confirmation.")
-                elif not CEO_USER_ID and current_user_step == 'notify_ceo_and_wait': # CEO not configured
+                elif not CEO_USER_ID and current_user_step == 'notify_ceo_and_wait':
                     await message.channel.send("You can use `complete` now as no CEO was configured for notification.")
                 else: 
                      await message.channel.send(f"You cannot use `complete` at this stage ('{current_user_step}'). Please continue with the current step or wait if you're at the notification stage.")
@@ -310,10 +316,16 @@ async def on_message(message):
                 await message.channel.send("You are not currently in an onboarding stage where the `complete` command is applicable.")
             return
 
-        if user_id in user_onboarding_states:
+        # If user is NOT in onboarding process and didn't type a known command:
+        if user_id not in user_onboarding_states:
+            await message.channel.send("Hello! To begin the onboarding process, please type `start`.")
+            return
+
+        # If user IS in onboarding process, handle their response based on current step:
+        if user_id in user_onboarding_states: # Redundant if above check returns, but good for explicit state check
             state = user_onboarding_states[user_id]
             current_step = state['step']
-            response = message.content.strip()
+            response = message.content.strip() # Use raw response for data that needs casing/full text
 
             if current_step == 'check_computer_response':
                 if processed_message_content.upper() == 'Y':
@@ -342,10 +354,12 @@ async def on_message(message):
                 else:
                     await message.channel.send("Invalid input. Please answer Y or N.")
                     return
+                # send_onboarding_message will decide next question based on 'bilingual' data
                 await send_onboarding_message(user_id, step_name_override='check_bilingual_response') 
 
             elif current_step == 'ask_languages':
                 state['data']['languages'] = response
+                # send_onboarding_message for 'ask_languages' will send the 'ask_state' question
                 await send_onboarding_message(user_id, step_name_override='ask_languages')
 
             elif current_step == 'ask_state':
@@ -360,12 +374,14 @@ async def on_message(message):
                     print(f"Onboarding process terminated for user {message.author.name} ({user_id}) due to Florida residency.")
                     return
                 else:
+                    # send_onboarding_message for 'ask_state' will send the 'ask_email' question
                     await send_onboarding_message(user_id, step_name_override='ask_state')
 
             elif current_step == 'ask_email':
                 if re.match(r"[^@]+@[^@]+\.[^@]+", response):
                     state['data']['email'] = response
-                    await send_onboarding_message(user_id, step_name_override='ask_email')
+                    # send_onboarding_message for 'ask_email' will send the 'instruct_add_friends' message
+                    await send_onboarding_message(user_id, step_name_override='ask_email') 
                 else:
                     await message.channel.send("That doesn't look like a valid email address. Please try again.")
                     return
@@ -380,22 +396,26 @@ async def on_message(message):
                         friends_to_remind_list.append(CEO_CONTACT_DISPLAY_NAME)
                     friends_to_remind_str = " and ".join(friends_to_remind_list)
                     if not friends_to_remind_list or (len(friends_to_remind_list)==1 and "Adam Black" in friends_to_remind_list[0] and not CEO_USER_ID):
-                        friends_to_remind_str = "Adam Black (Support)" # Fallback if only Adam
+                        friends_to_remind_str = "Adam Black (Support)"
                     await message.channel.send(f"Please ensure you add {friends_to_remind_str} as friends. This is important for team communication.")
                 else:
                     await message.channel.send("Invalid input. Please answer Y or N.")
                     return
+                # The 'check_add_friends_response' step in send_onboarding_message has 'pass',
+                # so we explicitly move to the next logical step message.
                 await send_onboarding_message(user_id, step_name_override='provide_training_materials')
 
             elif current_step == 'confirm_training_completion':
                 if processed_message_content.upper() == 'DONE':
                     state['data']['training_completed'] = True
+                    # send_onboarding_message for 'confirm_training_completion' will send summary & notify CEO
                     await send_onboarding_message(user_id, step_name_override='confirm_training_completion') 
                 else:
                     await message.channel.send("Please type 'DONE' once you have completed all training materials.")
                     return
 
             elif current_step == 'notify_ceo_and_wait':
+                # User typed something other than 'complete' while in the waiting state
                 wait_message = "I've already processed your training completion. "
                 contacts_to_wait_for = []
                 
@@ -403,12 +423,12 @@ async def on_message(message):
                     contacts_to_wait_for.append(CEO_CONTACT_DISPLAY_NAME)
 
                 if contacts_to_wait_for:
-                    notified_person_descriptor = " and ".join(contacts_to_wait_for) # Should be just CEO
+                    notified_person_descriptor = " and ".join(contacts_to_wait_for)
                     wait_message += (
                         f"Please wait for {notified_person_descriptor} to contact you or grant you access. "
                         "Once they have confirmed and you have access, please type `complete` back here."
                     )
-                elif state['data'].get('_notification_attempted'): # Attempted but CEO not successful
+                elif state['data'].get('_notification_attempted'): 
                     wait_message += (
                         f"I attempted to notify {CEO_CONTACT_DISPLAY_NAME if CEO_USER_ID else 'the designated contact'} but encountered issues. "
                         "Please inform them manually that you've completed this stage. "
