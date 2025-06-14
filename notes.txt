@@ -1,0 +1,51 @@
+
+Log in to your Adobe Acrobat Sign account.
+
+Look for "Account Settings," then a section like "API" or "API Applications."
+
+Create a New API Application:
+Click to "Create" a new application
+
+Name: Enter something like LTS Discord Onboarding Bot.
+
+Grant Type / Authentication: 
+Choose "Client Credentials".
+
+Enable Required Permissions (Scopes):
+You'll see a list of permissions. 
+Please check the boxes for these exact scopes:
+
+agreement_read
+agreement_write
+agreement_send
+transient_document_write
+user_read
+
+Save the application.
+
+Copy & Securely Share Credentials:
+After saving, the system will show a Client ID. Please copy this.
+
+It will also provide a Client Secret. This is like a password and often shown only once. Please copy this immediately.
+
+Send me both the Client ID and Client Secret
+
+Identify Your Account's server region:
+
+While logged into Adobe Sign, look at the URL in your browser's address bar.
+It will look something like https://secure.na1.adobesign.com/... or https://secure.na4.adobesign.com/... or https://secure.eu1.adobesign.com/... etc.
+
+Please tell me the part like na1, na4, or eu1. 
+This helps me set the correct server addresses.
+
+What I'll need from you:
+Client ID
+Client Secret
+The identifier (e.g., na1, na4, eu1)
+
+
+
+ADOBE_SIGN_API_HOST = api.na1.adobesign.com
+ADOBE_SIGN_OAUTH_TOKEN_URL = https://secure.na1.adobesign.com/oauth/v2/token
+ADOBE_SIGN_CLIENT_ID=
+ADOBE_SIGN_CLIENT_SECRET=

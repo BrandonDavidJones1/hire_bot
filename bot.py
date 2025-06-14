@@ -301,7 +301,7 @@ async def send_onboarding_message(user_id, step_name_override=None):
         next_step_in_flow = 'collect_last_name'
 
     elif current_step_name == 'collect_last_name':
-        message_content = "1. Do you have a computer or laptop (not an iPad or tablet) that you will be using for work? (Y/N)"
+        message_content = "1. Do you have a computer or laptop (not an iPad or tablet) and headset that you will be using for work? (Y/N)"
         next_step_in_flow = 'check_computer_response'
 
     elif current_step_name == 'ask_bilingual':
@@ -546,10 +546,6 @@ async def on_message(message):
 
         if processed_message_content == 'sign contract':
             if user_id in user_onboarding_states and user_onboarding_states[user_id]['step'] == 'awaiting_sign_contract_command':
-                if not all([ADOBE_SIGN_CLIENT_ID, ADOBE_SIGN_CLIENT_SECRET, ADOBE_SIGN_API_HOST, ADOBE_SIGN_OAUTH_TOKEN_URL, ICA_TEMPLATE_PATH]):
-                    await message.channel.send("I'm sorry, but the Adobe Sign integration is not fully configured on my end. Please contact an administrator.")
-                    print(f"ERROR: User {message.author.name} tried to 'sign contract' but Adobe Sign is not configured.")
-                    return
 
                 await message.channel.send("Thank you. I will now prepare your Independent Contractor Agreement using Adobe Sign. This may take a moment...")
                 
